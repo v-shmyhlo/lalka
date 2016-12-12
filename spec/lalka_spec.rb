@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 require 'spec_helper'
+require 'benchmark'
+require 'pry'
 
 describe Lalka do
   it 'has a version number' do
@@ -288,6 +290,46 @@ describe Lalka do
             result = task3.fork_wait
 
             expect(result).to eq(M.Right(100))
+          end
+
+          it 'forks both tasks at the same time' do
+            task1 = resolved_task(1, 1)
+            task2 = resolved_task(99, 1)
+
+            task3 = Lalka::Task.of(-> (x, y) { x + y }.curry).ap(task1).ap(task2)
+            real = Benchmark.measure { task3.fork_wait }.real
+
+            expect(real).to be < 1.1
+          end
+
+          it 'forks both tasks at the same time' do
+            task1 = resolved_task(1, 1)
+            task2 = resolved_task(99, 1)
+
+            task3 = Lalka::Task.of(-> (x, y) { x + y }.curry).ap(task2).ap(task1)
+            real = Benchmark.measure { task3.fork_wait }.real
+
+            expect(real).to be < 1.1
+          end
+
+          it 'forks both tasks at the same time' do
+            task1 = resolved_task(1, 1)
+            task2 = resolved_task(99, 1)
+
+            task3 = task1.map { |x| -> (y) { x + y } }.ap(task2)
+            real = Benchmark.measure { task3.fork_wait }.real
+
+            expect(real).to be < 1.1
+          end
+
+          it 'forks both tasks at the same time' do
+            task1 = resolved_task(1, 1)
+            task2 = resolved_task(99, 1)
+
+            task3 = task2.map { |x| -> (y) { x + y } }.ap(task1)
+            real = Benchmark.measure { task3.fork_wait }.real
+
+            expect(real).to be < 1.1
           end
         end
       end

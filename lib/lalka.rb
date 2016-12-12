@@ -100,22 +100,22 @@ module Lalka
       Task.new do |t|
         q = Queue.new
 
-        fork do |this|
-          this.on_success do |fn|
-            q.push [:fn, fn]
-          end
-
-          this.on_error do |error|
-            q.push [:error, error]
-          end
-        end
-
         other_task.fork do |other|
           other.on_success do |value|
             q.push [:arg, value]
           end
 
           other.on_error do |error|
+            q.push [:error, error]
+          end
+        end
+
+        fork do |this|
+          this.on_success do |fn|
+            q.push [:fn, fn]
+          end
+
+          this.on_error do |error|
             q.push [:error, error]
           end
         end
