@@ -29,7 +29,7 @@ TODO: Delete this and the text above, and describe your gem
 
 ### fork:
 ```ruby
-  # fork is nonblocking, returns nil
+  # executes computation, fork is nonblocking, returns nil
   task.fork do |t|
     t.on_success do |value|
       # do something with a value
@@ -43,7 +43,7 @@ TODO: Delete this and the text above, and describe your gem
 
 ### fork_wait:
 ```ruby
-  # fork_wait blocks and returns Either from "dry-monads" gem
+  # executes computation, fork_wait blocks and returns Either from "dry-monads" gem
   task = Lalka::Task.resolve(99)
 
   result = task.fork_wait do |t|

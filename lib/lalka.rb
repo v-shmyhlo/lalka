@@ -13,6 +13,8 @@ module Lalka
         end
       end
 
+      alias of resolve
+
       def reject(error)
         new do |t|
           t.reject(error)

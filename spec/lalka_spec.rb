@@ -280,6 +280,15 @@ describe Lalka do
             result = task.fork_wait(&handler)
             expect(result).to eq(M.Left('Error: second_error'))
           end
+
+          it 'is chainable' do
+            task1 = Lalka::Task.resolve(99)
+            task2 = Lalka::Task.resolve(1)
+            task3 = Lalka::Task.of(-> (x, y) { x + y }.curry).ap(task1).ap(task2)
+            result = task3.fork_wait
+
+            expect(result).to eq(M.Right(100))
+          end
         end
       end
     end
