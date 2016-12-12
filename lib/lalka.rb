@@ -18,6 +18,11 @@ module Lalka
           t.reject(error)
         end
       end
+
+      def id(internal)
+        internal.on_success { |v| v }
+        internal.on_error { |e| e }
+      end
     end
 
     def initialize(&block)
@@ -27,7 +32,13 @@ module Lalka
     def fork_wait
       queue = Queue.new
       internal = Internal.new(queue)
-      yield internal
+
+      if block_given?
+        yield internal
+      else
+        Task.id(internal)
+      end
+
       @computation.call(internal)
       queue.pop
     end

@@ -1,3 +1,9 @@
+# Lalka
+
+Welcome to your new gem! In this directory, you'll find the files you need to be able to package up your Ruby library into a gem. Put your Ruby code in the file `lib/lalka`. To experiment with that code, run `bin/console` for an interactive prompt.
+
+TODO: Delete this and the text above, and describe your gem
+
 # Usage
 
 ### Create:
@@ -63,11 +69,47 @@
   result # Left("Error: error")
 ```
 
-# Lalka
+### map:
+```ruby
+  task = Lalka::Task.resolve(99).map { |v| v + 1 }.map { |v| v.to_s + "!" }
 
-Welcome to your new gem! In this directory, you'll find the files you need to be able to package up your Ruby library into a gem. Put your Ruby code in the file `lib/lalka`. To experiment with that code, run `bin/console` for an interactive prompt.
+  result = task.fork_wait
+  result # Right("100!")
+```
 
-TODO: Delete this and the text above, and describe your gem
+```ruby
+  task = Lalka::Task.reject('error').map { |v| v + 1 }.map { |v| v.to_s + "!" }
+
+  result = task.fork_wait
+  result # Left("error")
+```
+
+### bind:
+```ruby
+  task = Lalka::Task.resolve(99).bind { |v| Lalka::Task.resolve(v + 1) }
+
+  result = task.fork_wait
+  result # Right(100)
+```
+
+### ap:
+```ruby
+  task = Lalka::Task.resolve(-> (v) { v + 1 }).ap(Lalka::Task.resolve(99))
+
+  result = task.fork_wait
+  result # Right(100)
+```
+
+```ruby
+  task1 = Lalka::Task.resolve(99)
+  task2 = Lalka::Task.resolve(1)
+
+  result = task1.map { |x| -> (y) { x + y } }.ap(task2).fork_wait
+  result # Right(100)
+
+  result = Lalka::Task.resolve(-> (x) { -> (y) { x + y } }).ap(task1).ap(task2).fork_wait
+  result # Right(100)
+```
 
 ## Installation
 
