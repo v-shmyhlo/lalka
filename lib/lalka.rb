@@ -42,7 +42,7 @@ module Lalka
     def map
       Task.new do |t|
         fork do |this|
-          this.on_sucess do |value|
+          this.on_success do |value|
             t.resolve(yield value)
           end
 
@@ -56,11 +56,11 @@ module Lalka
     def bind
       Task.new do |t|
         fork do |this|
-          this.on_sucess do |first_value|
+          this.on_success do |first_value|
             other_task = yield first_value
 
             other_task.fork do |other|
-              other.on_sucess do |second_value|
+              other.on_success do |second_value|
                 t.resolve(second_value)
               end
 
@@ -82,7 +82,7 @@ module Lalka
         q = Queue.new
 
         fork do |this|
-          this.on_sucess do |fn|
+          this.on_success do |fn|
             q.push [:fn, fn]
           end
 
@@ -92,7 +92,7 @@ module Lalka
         end
 
         other_task.fork do |other|
-          other.on_sucess do |value|
+          other.on_success do |value|
             q.push [:arg, value]
           end
 
@@ -130,15 +130,15 @@ module Lalka
 
   class InternalAsync
     def resolve(value)
-      @on_sucess.call(value)
+      @on_success.call(value)
     end
 
     def reject(error)
       @on_error.call(error)
     end
 
-    def on_sucess(&block)
-      @on_sucess = block
+    def on_success(&block)
+      @on_success = block
       nil
     end
 
@@ -154,7 +154,7 @@ module Lalka
     end
 
     def resolve(value)
-      result = @on_sucess.call(value)
+      result = @on_success.call(value)
       @queue.push Dry::Monads.Right(result)
     end
 
@@ -163,8 +163,8 @@ module Lalka
       @queue.push Dry::Monads.Left(result)
     end
 
-    def on_sucess(&block)
-      @on_sucess = block
+    def on_success(&block)
+      @on_success = block
     end
 
     def on_error(&block)

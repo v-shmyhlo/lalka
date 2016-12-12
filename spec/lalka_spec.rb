@@ -34,7 +34,7 @@ describe Lalka do
           'Error: ' + e
         end
 
-        t.on_sucess do |v|
+        t.on_success do |v|
           'Success: ' + v
         end
       end
@@ -72,11 +72,11 @@ describe Lalka do
           expect(result).to be_nil
         end
 
-        it 'when rejected executes on_sucess branch' do
+        it 'when rejected executes on_success branch' do
           queue = Queue.new
 
           resolved_task.fork do |t|
-            t.on_sucess do |error|
+            t.on_success do |error|
               queue.push(error)
             end
           end
