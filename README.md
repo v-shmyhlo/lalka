@@ -12,6 +12,10 @@ TODO: Delete this and the text above, and describe your gem
     t.resolve(value) # resolve task to a value
     # or
     t.reject(error) # reject task with an error
+    # or
+    t.try { 100 } # will resolve
+    # or
+    t.try { raise 'error' } # will reject
   end
 ```
 
@@ -19,6 +23,8 @@ TODO: Delete this and the text above, and describe your gem
 ```ruby
   resolved_task = Lalka::Task.resolve(value) # task which resolves to a value
   rejected_task = Lalka::Task.reject(error) # task which rejects to a value
+  task = Lalka::Task.try { 100 } # will resolve
+  task = Lalka::Task.try { raise 'error' } # will reject
 ```
 
 ### fork:
@@ -108,6 +114,9 @@ TODO: Delete this and the text above, and describe your gem
   result # Right(100)
 
   result = Lalka::Task.resolve(-> (x) { -> (y) { x + y } }).ap(task1).ap(task2).fork_wait
+  result # Right(100)
+
+  result = Lalka::Task.resolve(-> (x, y) { x + y }.curry).ap(task1).ap(task2).fork_wait
   result # Right(100)
 ```
 

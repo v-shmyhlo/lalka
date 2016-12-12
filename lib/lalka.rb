@@ -19,6 +19,12 @@ module Lalka
         end
       end
 
+      def try(&block)
+        new do |t|
+          t.try(&block)
+        end
+      end
+
       def id(internal)
         internal.on_success { |v| v }
         internal.on_error { |e| e }
@@ -139,15 +145,7 @@ module Lalka
     end
   end
 
-  class InternalAsync
-    def resolve(value)
-      @on_success.call(value)
-    end
-
-    def reject(error)
-      @on_error.call(error)
-    end
-
+  class InternalBase
     def on_success(&block)
       @on_success = block
       nil
@@ -157,9 +155,25 @@ module Lalka
       @on_error = block
       nil
     end
+
+    def try
+      resolve(yield)
+    rescue => e
+      reject(e)
+    end
   end
 
-  class Internal
+  class InternalAsync < InternalBase
+    def resolve(value)
+      @on_success.call(value)
+    end
+
+    def reject(error)
+      @on_error.call(error)
+    end
+  end
+
+  class Internal < InternalBase
     def initialize(queue)
       @queue = queue
     end
@@ -172,14 +186,6 @@ module Lalka
     def reject(error)
       result = @on_error.call(error)
       @queue.push Dry::Monads.Left(result)
-    end
-
-    def on_success(&block)
-      @on_success = block
-    end
-
-    def on_error(&block)
-      @on_error = block
     end
   end
 end

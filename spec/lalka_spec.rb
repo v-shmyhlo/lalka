@@ -9,7 +9,7 @@ describe Lalka do
   describe Lalka::Task do
     M = Dry::Monads
 
-    def delay(time, &block)
+    def delay(time = 0.1, &block)
       Thread.new(block) do |block|
         sleep time
         block.call
@@ -28,6 +28,8 @@ describe Lalka do
       end
     end
 
+    let(:queue) { Queue.new }
+
     let(:handler) do
       lambda do |t|
         t.on_error do |e|
@@ -41,6 +43,45 @@ describe Lalka do
     end
 
     describe 'Class Methods' do
+      describe '.new { |t| t.try { ... } }' do
+        def try_task
+          Lalka::Task.new do |t|
+            delay { t.try { yield } }
+          end
+        end
+
+        it 'resolves when no error raised' do
+          task = try_task { 100 }
+          result = task.fork_wait
+
+          expect(result).to eq(M.Right(100))
+        end
+
+        it 'rejects when error raised' do
+          task = try_task { raise 'error' }
+          result = task.fork_wait
+
+          expect(result.value).to be_a(RuntimeError)
+          expect(result.value.message).to eq('error')
+        end
+
+        it 'resolves when no error raised' do
+          task = try_task { 100 }
+          task.fork { |t| t.on_success { |v| queue.push v } }
+
+          expect(queue.pop).to eq(100)
+        end
+
+        it 'rejects when error raised' do
+          task = try_task { raise 'error' }
+          task.fork { |t| t.on_error { |v| queue.push v } }
+
+          result = queue.pop
+          expect(result).to be_a(RuntimeError)
+          expect(result.message).to eq('error')
+        end
+      end
+
       describe '.resolve' do
         it 'creates resolved' do
           task = Lalka::Task.resolve('value')
@@ -58,6 +99,43 @@ describe Lalka do
           expect(result).to eq(M.Left('Error: error'))
         end
       end
+
+      describe '.try' do
+        def try_task
+          Lalka::Task.try { yield }
+        end
+
+        it 'resolves when no error raised' do
+          task = try_task { 100 }
+          result = task.fork_wait
+
+          expect(result).to eq(M.Right(100))
+        end
+
+        it 'rejects when error raised' do
+          task = try_task { raise 'error' }
+          result = task.fork_wait
+
+          expect(result.value).to be_a(RuntimeError)
+          expect(result.value.message).to eq('error')
+        end
+
+        it 'resolves when no error raised' do
+          task = try_task { 100 }
+          task.fork { |t| t.on_success { |v| queue.push v } }
+
+          expect(queue.pop).to eq(100)
+        end
+
+        it 'rejects when error raised' do
+          task = try_task { raise 'error' }
+          task.fork { |t| t.on_error { |v| queue.push v } }
+
+          result = queue.pop
+          expect(result).to be_a(RuntimeError)
+          expect(result.message).to eq('error')
+        end
+      end
     end
 
     describe 'Instance Method' do
@@ -73,8 +151,6 @@ describe Lalka do
         end
 
         it 'when rejected executes on_success branch' do
-          queue = Queue.new
-
           resolved_task.fork do |t|
             t.on_success do |error|
               queue.push(error)
@@ -85,8 +161,6 @@ describe Lalka do
         end
 
         it 'when rejected executes on_error branch' do
-          queue = Queue.new
-
           rejected_task.fork do |t|
             t.on_error do |error|
               queue.push(error)
@@ -107,10 +181,22 @@ describe Lalka do
           result = rejected_task.fork_wait(&handler)
           expect(result).to eq(M.Left('Error: error'))
         end
+
+        context 'without block' do
+          it 'when resolved returns Right' do
+            result = resolved_task.fork_wait
+            expect(result).to eq(M.Right('value'))
+          end
+
+          it 'when rejected returns Left' do
+            result = rejected_task.fork_wait
+            expect(result).to eq(M.Left('error'))
+          end
+        end
       end
 
       describe '#map' do
-        let(:mapper) { -> value { value + '!' } }
+        let(:mapper) { -> (value) { value + '!' } }
 
         it 'when resolved returns mapped Right' do
           result = resolved_task.map(&mapper).fork_wait(&handler)
