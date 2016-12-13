@@ -331,6 +331,31 @@ describe Lalka do
 
             expect(real).to be < 1.1
           end
+
+          context 'when used in traverse' do
+            def traverse(type, f, xs)
+              cons = -> (x, xs) { [x, *xs] }.curry
+
+              xs.reverse.reduce(type.of([])) do |acc, value|
+                type.of(cons).ap(f.call(value)).ap(acc)
+              end
+            end
+
+            let(:mapper) { -> (value) { Lalka::Task.new { |t| delay(1) { t.resolve(value) } } } }
+            let(:task) { traverse(Lalka::Task, mapper, [1, 2, 3, 4, 5]) }
+
+            it 'returns correct result' do
+              result = task.fork_wait
+
+              expect(result).to eq(M.Right([1, 2, 3, 4, 5]))
+            end
+
+            it 'forks all tasks at the same time' do
+              real = Benchmark.measure { task.fork_wait }.real
+
+              expect(real).to be < 1.1
+            end
+          end
         end
       end
     end

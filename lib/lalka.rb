@@ -1,19 +1,20 @@
 # frozen_string_literal: true
 require 'lalka/version'
 require 'dry-monads'
+require 'concurrent'
 
 module Lalka
   # TODO: Invalidate resolve and reject at the same time
 
   class Task
+    M = Dry::Monads
+
     class << self
       def resolve(value)
         new do |t|
           t.resolve(value)
         end
       end
-
-      alias of resolve
 
       def reject(error)
         new do |t|
@@ -31,6 +32,8 @@ module Lalka
         internal.on_success { |v| v }
         internal.on_error { |e| e }
       end
+
+      alias of resolve
     end
 
     def initialize(&block)
@@ -98,53 +101,49 @@ module Lalka
 
     def ap(other_task)
       Task.new do |t|
-        q = Queue.new
+        atom = Concurrent::Agent.new(M.Right(fn: M.None(), arg: M.None()))
 
-        other_task.fork do |other|
-          other.on_success do |value|
-            q.push [:arg, value]
-          end
+        atom.add_observer do |_, _, either|
+          if either.right?
+            value = either.value
 
-          other.on_error do |error|
-            q.push [:error, error]
+            value[:fn].bind { |fn| value[:arg].fmap(fn) }.fmap do |result|
+              t.resolve(result)
+              atom.delete_observers
+            end
+          else
+            error = either.value
+
+            t.reject(error)
+            atom.delete_observers
           end
         end
 
         fork do |this|
           this.on_success do |fn|
-            q.push [:fn, fn]
+            atom.send(fn) { |either, fn| either.bind { |struct| M.Right(struct.merge(fn: M.Some(fn))) } }
           end
 
           this.on_error do |error|
-            q.push [:error, error]
+            atom.send(error) { |either, error| either.bind { M.Left(error) } }
           end
         end
 
-        ap_aux(t, q, [false, nil], [false, nil])
-      end
-    end
+        other_task.fork do |other|
+          other.on_success do |arg|
+            atom.send(arg) { |either, arg| either.bind { |struct| M.Right(struct.merge(arg: M.Some(arg))) } }
+          end
 
-    private
-
-    def ap_aux(task, queue, fn, arg)
-      if fn[0] && arg[0]
-        result = fn[1].call(arg[1])
-        task.resolve(result)
-      else
-        type, value = queue.pop
-
-        case type
-        when :error
-          task.reject(value)
-        when :fn
-          ap_aux(task, queue, [true, value], arg)
-        when :arg
-          ap_aux(task, queue, fn, [true, value])
-        else
-          raise 'Unknown type'
+          other.on_error do |error|
+            atom.send(error) { |either, error| either.bind { M.Left(error) } }
+          end
         end
       end
     end
+
+    alias fmap map
+    alias chain bind
+    alias flat_map bind
   end
 
   class InternalBase
@@ -182,12 +181,12 @@ module Lalka
 
     def resolve(value)
       result = @on_success.call(value)
-      @queue.push Dry::Monads.Right(result)
+      @queue.push M.Right(result)
     end
 
     def reject(error)
       result = @on_error.call(error)
-      @queue.push Dry::Monads.Left(result)
+      @queue.push M.Left(result)
     end
   end
 end
