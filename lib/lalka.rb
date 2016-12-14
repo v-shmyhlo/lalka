@@ -4,11 +4,10 @@ require 'dry-monads'
 require 'concurrent'
 
 module Lalka
+  M = Dry::Monads
   # TODO: Invalidate resolve and reject at the same time
 
   class Task
-    M = Dry::Monads
-
     class << self
       def resolve(value)
         new do |t|
