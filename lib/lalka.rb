@@ -100,7 +100,7 @@ module Lalka
 
     def ap(other_task)
       Task.new do |t|
-        atom = Concurrent::Agent.new(M.Right(fn: M.None(), arg: M.None()))
+        atom = Concurrent::Atom.new(M.Right(fn: M.None(), arg: M.None()))
 
         atom.add_observer do |_, _, either|
           if either.right?
@@ -120,21 +120,21 @@ module Lalka
 
         fork do |this|
           this.on_success do |fn|
-            atom.send(fn) { |either, fn| either.bind { |struct| M.Right(struct.merge(fn: M.Some(fn))) } }
+            atom.swap(fn) { |either, fn| either.bind { |struct| M.Right(struct.merge(fn: M.Some(fn))) } }
           end
 
           this.on_error do |error|
-            atom.send(error) { |either, error| either.bind { M.Left(error) } }
+            atom.swap(error) { |either, error| either.bind { M.Left(error) } }
           end
         end
 
         other_task.fork do |other|
           other.on_success do |arg|
-            atom.send(arg) { |either, arg| either.bind { |struct| M.Right(struct.merge(arg: M.Some(arg))) } }
+            atom.swap(arg) { |either, arg| either.bind { |struct| M.Right(struct.merge(arg: M.Some(arg))) } }
           end
 
           other.on_error do |error|
-            atom.send(error) { |either, error| either.bind { M.Left(error) } }
+            atom.swap(error) { |either, error| either.bind { M.Left(error) } }
           end
         end
       end
