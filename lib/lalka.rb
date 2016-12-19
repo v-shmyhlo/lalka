@@ -6,6 +6,7 @@ require 'concurrent'
 module Lalka
   M = Dry::Monads
   # TODO: Invalidate resolve and reject at the same time
+  # TODO: Handle missing on_success and on_error blocks
 
   class Task
     class << self
