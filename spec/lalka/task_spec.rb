@@ -4,12 +4,8 @@ require 'spec_helper'
 describe Lalka::Task do
   M = Dry::Monads
 
-  def pure(value)
-    Lalka::Task.of(value)
-  end
-
   def make_sync_task(success: nil, error: nil, &block)
-    Lalka::Task.new do |t|
+    klass.new do |t|
       if !success.nil?
         t.resolve(success)
       elsif !error.nil?
@@ -23,7 +19,7 @@ describe Lalka::Task do
   end
 
   def make_async_task(success: nil, error: nil, delay_coef: 1, &block)
-    Lalka::Task.new do |t|
+    klass.new do |t|
       delay(delay_coef) do
         if !success.nil?
           t.resolve(success)
@@ -110,6 +106,7 @@ describe Lalka::Task do
   end
 
   let(:delay_time) { 0.1 }
+  let(:klass) { described_class }
 
   let(:handler) do
     lambda do |t|
@@ -124,6 +121,34 @@ describe Lalka::Task do
   end
 
   describe 'Class Methods' do
+    describe '.new { |t| raise }' do
+      let(:task) { klass.new { |t| raise 'error' } }
+
+      it 'raises RuntimeError when #fork called' do
+        expect { task.fork {} }.to raise_error(RuntimeError, 'error')
+      end
+
+      it 'raises RuntimeError when #fork_wait called' do
+        expect { task.fork_wait {} }.to raise_error(RuntimeError, 'error')
+      end
+
+      context 'when used in #ap' do
+        let(:task) do
+          f_task = make_async_task(success: -> (x) { x + 1 })
+          v_task = klass.new { |t| raise 'error' }
+          f_task.ap(v_task)
+        end
+
+        it 'raises RuntimeError when #fork called' do
+          expect { task.fork {} }.to raise_error(RuntimeError, 'error')
+        end
+
+        it 'raises RuntimeError when #fork_wait called' do
+          expect { task.fork_wait {} }.to raise_error(RuntimeError, 'error')
+        end
+      end
+    end
+
     describe '.new { |t| t.try { ... } }' do
       it 'resolves when no error raised' do
         task = make_async_task { 100 }
@@ -156,14 +181,14 @@ describe Lalka::Task do
 
     describe '.resolve' do
       it_behaves_like 'it resolves to a value' do
-        let(:task) { Lalka::Task.resolve('value') }
+        let(:task) { klass.resolve('value') }
         let(:value) { 'value' }
       end
     end
 
     describe '.reject' do
       it_behaves_like 'it rejects with an error' do
-        let(:task) { Lalka::Task.reject('error') }
+        let(:task) { klass.reject('error') }
         let(:error) { 'error' }
       end
     end
@@ -246,10 +271,10 @@ describe Lalka::Task do
     end
 
     describe '#map' do
-      let(:mapper) { -> (value) { value + '!' } }
+      let(:f) { -> (x) { x + '!' } }
 
       it 'raises ArgumentError when block and function passed' do
-        expect { resolved_task.map(mapper, &mapper) }.to raise_error(ArgumentError)
+        expect { resolved_task.map(f, &f) }.to raise_error(ArgumentError)
       end
 
       it 'raises ArgumentError when nothing passed' do
@@ -258,35 +283,37 @@ describe Lalka::Task do
 
       context 'when block passed' do
         it_behaves_like 'it resolves to a value' do
-          let(:task) { resolved_task.map(&mapper) }
+          let(:task) { resolved_task.map(&f) }
           let(:value) { 'value!' }
         end
 
         it_behaves_like 'it rejects with an error' do
-          let(:task) { rejected_task.map(&mapper) }
+          let(:task) { rejected_task.map(&f) }
           let(:error) { 'error' }
         end
       end
 
       context 'when function passed' do
         it_behaves_like 'it resolves to a value' do
-          let(:task) { resolved_task.map(mapper) }
+          let(:task) { resolved_task.map(f) }
           let(:value) { 'value!' }
         end
 
         it_behaves_like 'it rejects with an error' do
-          let(:task) { rejected_task.map(mapper) }
+          let(:task) { rejected_task.map(f) }
           let(:error) { 'error' }
         end
       end
     end
 
     describe '#bind' do
-      xit 'raises ArgumentError when block and function passed' do
-        expect { resolved_task.bind(mapper, &mapper) }.to raise_error(ArgumentError)
+      let(:f) { -> (x) { klass.of(x + '!') } }
+
+      it 'raises ArgumentError when block and function passed' do
+        expect { resolved_task.bind(f, &f) }.to raise_error(ArgumentError)
       end
 
-      xit 'raises ArgumentError when nothing passed' do
+      it 'raises ArgumentError when nothing passed' do
         expect { resolved_task.bind }.to raise_error(ArgumentError)
       end
 
@@ -322,7 +349,7 @@ describe Lalka::Task do
     describe '#ap' do
       describe 'resolved.ap(resolved)' do
         it_behaves_like 'it resolves to a value' do
-          let(:task) { resolved_task(-> (value) { value + '!' }).ap(resolved_task) }
+          let(:task) { resolved_task(-> (x) { x + '!' }).ap(resolved_task) }
           let(:value) { 'value!' }
         end
       end
@@ -336,7 +363,7 @@ describe Lalka::Task do
 
       describe 'resolved.ap(rejected)' do
         it_behaves_like 'it rejects with an error' do
-          let(:task) { resolved_task(-> (value) { value + '!' }).ap(rejected_task('second_error')) }
+          let(:task) { resolved_task(-> (x) { x + '!' }).ap(rejected_task('second_error')) }
           let(:error) { 'second_error' }
         end
       end
@@ -371,7 +398,7 @@ describe Lalka::Task do
             task1 = make_sync_task(success: 99)
             task2 = make_sync_task(success: 1)
 
-            pure(-> (x, y) { x + y }.curry).ap(task1).ap(task2)
+            klass.of(-> (x, y) { x + y }.curry).ap(task1).ap(task2)
           end
 
           let(:value) { 100 }
@@ -383,7 +410,7 @@ describe Lalka::Task do
           task1 = make_async_task(success: 1)
           task2 = make_async_task(success: 99)
 
-          pure(-> (x, y) { x + y }.curry).ap(task1).ap(task2)
+          klass.of(-> (x, y) { x + y }.curry).ap(task1).ap(task2)
         end
       end
 
@@ -392,7 +419,7 @@ describe Lalka::Task do
           task1 = make_async_task(success: 1)
           task2 = make_async_task(success: 99)
 
-          pure(-> (x, y) { x + y }.curry).ap(task2).ap(task1)
+          klass.of(-> (x, y) { x + y }.curry).ap(task2).ap(task1)
         end
       end
 
@@ -423,7 +450,7 @@ describe Lalka::Task do
           end
         end
 
-        let(:task) { traverse(Lalka::Task, [1, 2, 3, 4, 5]) { |v| make_async_task(success: v) } }
+        let(:task) { traverse(klass, [1, 2, 3, 4, 5]) { |v| make_async_task(success: v) } }
 
         it_behaves_like 'it resolves to a value' do
           let(:value) { [1, 2, 3, 4, 5] }
