@@ -4,6 +4,10 @@ require 'spec_helper'
 describe Lalka::Task do
   M = Dry::Monads
 
+  def pure(value)
+    Lalka::Task.of(value)
+  end
+
   def make_sync_task(success: nil, error: nil, &block)
     Lalka::Task.new do |t|
       if !success.nil?
@@ -151,20 +155,16 @@ describe Lalka::Task do
     end
 
     describe '.resolve' do
-      it 'creates resolved' do
-        task = Lalka::Task.resolve('value')
-        result = task.fork_wait(&handler)
-
-        expect(result).to eq(M.Right('Success: value'))
+      it_behaves_like 'it resolves to a value' do
+        let(:task) { Lalka::Task.resolve('value') }
+        let(:value) { 'value' }
       end
     end
 
     describe '.reject' do
-      it 'creates rejected' do
-        task = Lalka::Task.reject('error')
-        result = task.fork_wait(&handler)
-
-        expect(result).to eq(M.Left('Error: error'))
+      it_behaves_like 'it rejects with an error' do
+        let(:task) { Lalka::Task.reject('error') }
+        let(:error) { 'error' }
       end
     end
 
@@ -321,111 +321,115 @@ describe Lalka::Task do
 
     describe '#ap' do
       describe 'resolved.ap(resolved)' do
-        it 'chains computations' do
-          task = resolved_task(-> (value) { value + '!' }).ap(resolved_task)
-          result = task.fork_wait(&handler)
-          expect(result).to eq(M.Right('Success: value!'))
+        it_behaves_like 'it resolves to a value' do
+          let(:task) { resolved_task(-> (value) { value + '!' }).ap(resolved_task) }
+          let(:value) { 'value!' }
         end
       end
 
       describe 'rejected.ap(resolved)' do
-        it 'returns first error' do
-          task = rejected_task('first_error').ap(resolved_task)
-          result = task.fork_wait(&handler)
-          expect(result).to eq(M.Left('Error: first_error'))
+        it_behaves_like 'it rejects with an error' do
+          let(:task) { rejected_task('first_error').ap(resolved_task) }
+          let(:error) { 'first_error' }
         end
       end
 
       describe 'resolved.ap(rejected)' do
-        it 'returns second error' do
-          task = resolved_task(-> (value) { value + '!' }).ap(rejected_task('second_error'))
-          result = task.fork_wait(&handler)
-          expect(result).to eq(M.Left('Error: second_error'))
+        it_behaves_like 'it rejects with an error' do
+          let(:task) { resolved_task(-> (value) { value + '!' }).ap(rejected_task('second_error')) }
+          let(:error) { 'second_error' }
         end
       end
 
       describe 'rejected.ap(rejected)' do
-        it 'returns first error' do
-          f_task = make_async_task(error: 'first_error')
-          v_task = make_async_task(error: 'second_error', delay_coef: 2)
-
-          task = f_task.ap(v_task)
-          result = task.fork_wait(&handler)
-
-          expect(result).to eq(M.Left('Error: first_error'))
-        end
-
-        it 'returns second error' do
-          f_task = make_async_task(error: 'first_error', delay_coef: 2)
-          v_task = make_async_task(error: 'second_error')
-
-          task = f_task.ap(v_task)
-          result = task.fork_wait(&handler)
-          expect(result).to eq(M.Left('Error: second_error'))
-        end
-
-        it 'is chainable' do
-          task1 = Lalka::Task.resolve(99)
-          task2 = Lalka::Task.resolve(1)
-          task3 = Lalka::Task.of(-> (x, y) { x + y }.curry).ap(task1).ap(task2)
-          result = task3.fork_wait
-
-          expect(result).to eq(M.Right(100))
-        end
-
-        it_behaves_like 'it forks all tasks at the same time' do
+        it_behaves_like 'it rejects with an error' do
           let(:task) do
-            task1 = make_async_task(success: 1)
-            task2 = make_async_task(success: 99)
+            f_task = make_async_task(error: 'first_error')
+            v_task = make_async_task(error: 'second_error', delay_coef: 2)
 
-            Lalka::Task.of(-> (x, y) { x + y }.curry).ap(task1).ap(task2)
+            f_task.ap(v_task)
           end
+
+          let(:error) { 'first_error' }
         end
 
-        it_behaves_like 'it forks all tasks at the same time' do
+        it_behaves_like 'it rejects with an error' do
           let(:task) do
-            task1 = make_async_task(success: 1)
-            task2 = make_async_task(success: 99)
+            f_task = make_async_task(error: 'first_error', delay_coef: 2)
+            v_task = make_async_task(error: 'second_error')
 
-            Lalka::Task.of(-> (x, y) { x + y }.curry).ap(task2).ap(task1)
+            f_task.ap(v_task)
           end
-        end
 
-        it_behaves_like 'it forks all tasks at the same time' do
+          let(:error) { 'second_error' }
+        end
+      end
+
+      describe 'pure(f).ap(resolved).ap(resolved)' do
+        it_behaves_like 'it resolves to a value' do
           let(:task) do
-            task1 = make_async_task(success: 1)
-            task2 = make_async_task(success: 99)
+            task1 = make_sync_task(success: 99)
+            task2 = make_sync_task(success: 1)
 
-            task1.map { |x| -> (y) { x + y } }.ap(task2)
+            pure(-> (x, y) { x + y }.curry).ap(task1).ap(task2)
+          end
+
+          let(:value) { 100 }
+        end
+      end
+
+      it_behaves_like 'it forks all tasks at the same time' do
+        let(:task) do
+          task1 = make_async_task(success: 1)
+          task2 = make_async_task(success: 99)
+
+          pure(-> (x, y) { x + y }.curry).ap(task1).ap(task2)
+        end
+      end
+
+      it_behaves_like 'it forks all tasks at the same time' do
+        let(:task) do
+          task1 = make_async_task(success: 1)
+          task2 = make_async_task(success: 99)
+
+          pure(-> (x, y) { x + y }.curry).ap(task2).ap(task1)
+        end
+      end
+
+      it_behaves_like 'it forks all tasks at the same time' do
+        let(:task) do
+          task1 = make_async_task(success: 1)
+          task2 = make_async_task(success: 99)
+
+          task1.map { |x| -> (y) { x + y } }.ap(task2)
+        end
+      end
+
+      it_behaves_like 'it forks all tasks at the same time' do
+        let(:task) do
+          task1 = make_async_task(success: 1)
+          task2 = make_async_task(success: 99)
+
+          task2.map { |x| -> (y) { x + y } }.ap(task1)
+        end
+      end
+
+      context 'when used in traverse' do
+        def traverse(type, xs)
+          cons = -> (x, xs) { [x, *xs] }.curry
+
+          xs.reverse.reduce(type.of([])) do |acc, value|
+            type.of(cons).ap(yield(value)).ap(acc)
           end
         end
 
-        it_behaves_like 'it forks all tasks at the same time' do
-          let(:task) do
-            task1 = make_async_task(success: 1)
-            task2 = make_async_task(success: 99)
+        let(:task) { traverse(Lalka::Task, [1, 2, 3, 4, 5]) { |v| make_async_task(success: v) } }
 
-            task2.map { |x| -> (y) { x + y } }.ap(task1)
-          end
+        it_behaves_like 'it resolves to a value' do
+          let(:value) { [1, 2, 3, 4, 5] }
         end
 
-        context 'when used in traverse' do
-          def traverse(type, xs)
-            cons = -> (x, xs) { [x, *xs] }.curry
-
-            xs.reverse.reduce(type.of([])) do |acc, value|
-              type.of(cons).ap(yield(value)).ap(acc)
-            end
-          end
-
-          let(:task) { traverse(Lalka::Task, [1, 2, 3, 4, 5]) { |v| make_async_task(success: v) } }
-
-          it_behaves_like 'it resolves to a value' do
-            let(:value) { [1, 2, 3, 4, 5] }
-          end
-
-          it_behaves_like 'it forks all tasks at the same time'
-        end
+        it_behaves_like 'it forks all tasks at the same time'
       end
     end
   end
