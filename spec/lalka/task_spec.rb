@@ -95,16 +95,26 @@ describe Lalka::Task do
     end
   end
 
+  shared_examples 'it rejects with an error' do
+    it 'rejects with correct error with #fork_wait' do
+      expect(task.fork_wait).to eq(M.Left(error))
+    end
+
+    it 'rejects with correct error with #fork' do
+      expect(wait_for_error(task)).to eq(error)
+    end
+  end
+
   let(:delay_time) { 0.1 }
 
   let(:handler) do
     lambda do |t|
-      t.on_error do |e|
-        'Error: ' + e
-      end
-
       t.on_success do |v|
         'Success: ' + v
+      end
+
+      t.on_error do |e|
+        'Error: ' + e
       end
     end
   end
@@ -238,47 +248,73 @@ describe Lalka::Task do
     describe '#map' do
       let(:mapper) { -> (value) { value + '!' } }
 
-      it 'when resolved returns mapped Right' do
-        result = resolved_task.map(&mapper).fork_wait(&handler)
-        expect(result).to eq(M.Right('Success: value!'))
+      it 'raises ArgumentError when block and function passed' do
+        expect { resolved_task.map(mapper, &mapper) }.to raise_error(ArgumentError)
       end
 
-      it 'when rejected returns unchanged Left' do
-        result = rejected_task.map(&mapper).fork_wait(&handler)
-        expect(result).to eq(M.Left('Error: error'))
+      it 'raises ArgumentError when nothing passed' do
+        expect { resolved_task.map }.to raise_error(ArgumentError)
+      end
+
+      context 'when block passed' do
+        it_behaves_like 'it resolves to a value' do
+          let(:task) { resolved_task.map(&mapper) }
+          let(:value) { 'value!' }
+        end
+
+        it_behaves_like 'it rejects with an error' do
+          let(:task) { rejected_task.map(&mapper) }
+          let(:error) { 'error' }
+        end
+      end
+
+      context 'when function passed' do
+        it_behaves_like 'it resolves to a value' do
+          let(:task) { resolved_task.map(mapper) }
+          let(:value) { 'value!' }
+        end
+
+        it_behaves_like 'it rejects with an error' do
+          let(:task) { rejected_task.map(mapper) }
+          let(:error) { 'error' }
+        end
       end
     end
 
     describe '#bind' do
+      xit 'raises ArgumentError when block and function passed' do
+        expect { resolved_task.bind(mapper, &mapper) }.to raise_error(ArgumentError)
+      end
+
+      xit 'raises ArgumentError when nothing passed' do
+        expect { resolved_task.bind }.to raise_error(ArgumentError)
+      end
+
       describe 'resolved.bind(x -> resolved)' do
-        it 'chains computations' do
-          task = resolved_task.bind { |v| resolved_task(v + '!') }
-          result = task.fork_wait(&handler)
-          expect(result).to eq(M.Right('Success: value!'))
+        it_behaves_like 'it resolves to a value' do
+          let(:task) { resolved_task.bind { |v| resolved_task(v + '!') } }
+          let(:value) { 'value!' }
         end
       end
 
       describe 'rejected.bind(x -> resolved)' do
-        it 'returns first error' do
-          task = rejected_task('first_error').bind { |v| resolved_task(v + '!') }
-          result = task.fork_wait(&handler)
-          expect(result).to eq(M.Left('Error: first_error'))
+        it_behaves_like 'it rejects with an error' do
+          let(:task) { rejected_task('first_error').bind { |v| resolved_task(v + '!') } }
+          let(:error) { 'first_error' }
         end
       end
 
       describe 'resolved.bind(x -> rejected)' do
-        it 'returns second error' do
-          task = resolved_task.bind { |v| rejected_task('Error: second_error (but has value: ' + v + ')') }
-          result = task.fork_wait(&handler)
-          expect(result).to eq(M.Left('Error: Error: second_error (but has value: value)'))
+        it_behaves_like 'it rejects with an error' do
+          let(:task) { resolved_task.bind { |v| rejected_task('second_error (but has value: ' + v + ')') } }
+          let(:error) { 'second_error (but has value: value)' }
         end
       end
 
       describe 'rejected.bind(x -> rejected)' do
-        it 'returns first error' do
-          task = rejected_task('first_error').bind { |v| rejected_task('Error: second_error (but has value: ' + v + ')') }
-          result = task.fork_wait(&handler)
-          expect(result).to eq(M.Left('Error: first_error'))
+        it_behaves_like 'it rejects with an error' do
+          let(:task) { rejected_task('first_error').bind { |v| rejected_task('second_error (but has value: ' + v + ')') } }
+          let(:error) { 'first_error' }
         end
       end
     end
