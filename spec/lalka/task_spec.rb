@@ -4,6 +4,56 @@ require 'spec_helper'
 describe Lalka::Task do
   M = Dry::Monads
 
+  def make_sync_task(success: nil, error: nil, &block)
+    Lalka::Task.new do |t|
+      if !success.nil?
+        t.resolve(success)
+      elsif !error.nil?
+        t.reject(error)
+      elsif block_given?
+        t.try(&block)
+      else
+        raise ArgumentError
+      end
+    end
+  end
+
+  def make_async_task(success: nil, error: nil, &block)
+    Lalka::Task.new do |t|
+      delay do
+        if !success.nil?
+          t.resolve(success)
+        elsif !error.nil?
+          t.reject(error)
+        elsif block_given?
+          t.try(&block)
+        else
+          raise ArgumentError
+        end
+      end
+    end
+  end
+
+  def wait_for_sucess(task)
+    queue = Queue.new
+
+    task.fork do |t|
+      t.on_success { |v| queue.push(v) }
+    end
+
+    queue.pop
+  end
+
+  def wait_for_error(task)
+    queue = Queue.new
+
+    task.fork do |t|
+      t.on_error { |e| queue.push(e) }
+    end
+
+    queue.pop
+  end
+
   def delay(time = 0.1, &block)
     Thread.new(block) do |block|
       sleep time
@@ -23,8 +73,6 @@ describe Lalka::Task do
     end
   end
 
-  let(:queue) { Queue.new }
-
   let(:handler) do
     lambda do |t|
       t.on_error do |e|
@@ -39,21 +87,15 @@ describe Lalka::Task do
 
   describe 'Class Methods' do
     describe '.new { |t| t.try { ... } }' do
-      def make_try_task
-        Lalka::Task.new do |t|
-          delay { t.try { yield } }
-        end
-      end
-
       it 'resolves when no error raised' do
-        task = make_try_task { 100 }
+        task = make_async_task { 100 }
         result = task.fork_wait
 
         expect(result).to eq(M.Right(100))
       end
 
       it 'rejects when error raised' do
-        task = make_try_task { raise 'error' }
+        task = make_async_task { raise 'error' }
         result = task.fork_wait
 
         expect(result.value).to be_a(RuntimeError)
@@ -61,17 +103,14 @@ describe Lalka::Task do
       end
 
       it 'resolves when no error raised' do
-        task = make_try_task { 100 }
-        task.fork { |t| t.on_success { |v| queue.push v } }
-
-        expect(queue.pop).to eq(100)
+        task = make_async_task { 100 }
+        expect(wait_for_sucess(task)).to eq(100)
       end
 
       it 'rejects when error raised' do
-        task = make_try_task { raise 'error' }
-        task.fork { |t| t.on_error { |v| queue.push v } }
+        task = make_async_task { raise 'error' }
+        result = wait_for_error(task)
 
-        result = queue.pop
         expect(result).to be_a(RuntimeError)
         expect(result.message).to eq('error')
       end
@@ -96,19 +135,15 @@ describe Lalka::Task do
     end
 
     describe '.try' do
-      def make_try_task
-        Lalka::Task.try { yield }
-      end
-
       it 'resolves when no error raised' do
-        task = make_try_task { 100 }
+        task = make_sync_task { 100 }
         result = task.fork_wait
 
         expect(result).to eq(M.Right(100))
       end
 
       it 'rejects when error raised' do
-        task = make_try_task { raise 'error' }
+        task = make_sync_task { raise 'error' }
         result = task.fork_wait
 
         expect(result.value).to be_a(RuntimeError)
@@ -116,17 +151,13 @@ describe Lalka::Task do
       end
 
       it 'resolves when no error raised' do
-        task = make_try_task { 100 }
-        task.fork { |t| t.on_success { |v| queue.push v } }
-
-        expect(queue.pop).to eq(100)
+        task = make_sync_task { 100 }
+        expect(wait_for_sucess(task)).to eq(100)
       end
 
       it 'rejects when error raised' do
-        task = make_try_task { raise 'error' }
-        task.fork { |t| t.on_error { |v| queue.push v } }
-
-        result = queue.pop
+        task = make_sync_task { raise 'error' }
+        result = wait_for_error(task)
         expect(result).to be_a(RuntimeError)
         expect(result.message).to eq('error')
       end
@@ -135,34 +166,24 @@ describe Lalka::Task do
 
   describe 'Instance Method' do
     describe '#fork' do
-      it 'when resolved returns nil' do
+      it 'returns nil when resolved' do
         result = resolved_task.fork(&handler)
         expect(result).to be_nil
       end
 
-      it 'when rejected returns nil' do
+      it 'returns nil when rejected' do
         result = rejected_task.fork(&handler)
         expect(result).to be_nil
       end
 
-      it 'when rejected executes on_success branch' do
-        resolved_task.fork do |t|
-          t.on_success do |error|
-            queue.push(error)
-          end
-        end
-
-        expect(queue.pop).to eq('value')
+      it 'executes on_success branch when rejected' do
+        result = wait_for_sucess(resolved_task)
+        expect(result).to eq('value')
       end
 
-      it 'when rejected executes on_error branch' do
-        rejected_task.fork do |t|
-          t.on_error do |error|
-            queue.push(error)
-          end
-        end
-
-        expect(queue.pop).to eq('error')
+      it 'executes on_error branch when rejected' do
+        result = wait_for_error(rejected_task)
+        expect(result).to eq('error')
       end
     end
 

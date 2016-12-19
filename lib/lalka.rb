@@ -60,11 +60,13 @@ module Lalka
       nil
     end
 
-    def map
+    def map(*args, &block)
+      block = function_from_arguments(*args, &block)
+
       Task.new do |t|
         fork do |this|
           this.on_success do |value|
-            t.resolve(yield value)
+            t.resolve(block.call(value))
           end
 
           this.on_error do |error|
@@ -74,11 +76,13 @@ module Lalka
       end
     end
 
-    def bind
+    def bind(*args, &block)
+      block = function_from_arguments(*args, &block)
+
       Task.new do |t|
         fork do |this|
           this.on_success do |first_value|
-            other_task = yield first_value
+            other_task = block.call(first_value)
 
             other_task.fork do |other|
               other.on_success do |second_value|
@@ -143,6 +147,18 @@ module Lalka
     alias fmap map
     alias chain bind
     alias flat_map bind
+
+    private
+
+    def function_from_arguments(*args, &block)
+      if block_given?
+        raise ArgumentError if args.length != 0
+        block
+      else
+        raise ArgumentError if args.length != 1
+        args[0]
+      end
+    end
   end
 
   class InternalBase
