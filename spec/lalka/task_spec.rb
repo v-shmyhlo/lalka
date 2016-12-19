@@ -64,15 +64,11 @@ describe Lalka::Task do
   end
 
   def resolved_task(value = 'value', delay_coef = 1)
-    Lalka::Task.new do |t|
-      delay(delay_coef) { t.resolve(value) }
-    end
+    make_async_task(success: value, delay_coef: delay_coef)
   end
 
   def rejected_task(error = 'error', delay_coef = 1)
-    Lalka::Task.new do |t|
-      delay(delay_coef) { t.reject(error) }
-    end
+    make_async_task(error: error, delay_coef: delay_coef)
   end
 
   shared_examples 'it forks all tasks at the same time' do
