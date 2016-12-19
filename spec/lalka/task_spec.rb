@@ -63,25 +63,35 @@ describe Lalka::Task do
     end
   end
 
-  def resolved_task(value = 'value', delay_coef = 1)
-    make_async_task(success: value, delay_coef: delay_coef)
+  def resolved_task(value = 'value')
+    make_async_task(success: value)
   end
 
-  def rejected_task(error = 'error', delay_coef = 1)
-    make_async_task(error: error, delay_coef: delay_coef)
+  def rejected_task(error = 'error')
+    make_async_task(error: error)
   end
 
   shared_examples 'it forks all tasks at the same time' do
-    it 'resolves within reasonable time' do
+    it 'resolves within reasonable time with #fork_wait' do
       actual = Benchmark.measure { task.fork_wait }.real
       expected = delay_time + delay_time * 0.2
       expect(actual).to be < expected
     end
 
-    it 'resolves within reasonable time' do
+    it 'resolves within reasonable time with #fork' do
       actual = Benchmark.measure { wait_for_sucess(task) }.real
       expected = delay_time + delay_time * 0.2
       expect(actual).to be < expected
+    end
+  end
+
+  shared_examples 'it resolves to a value' do
+    it 'resolves to correct value with #fork_wait' do
+      expect(task.fork_wait).to eq(M.Right(value))
+    end
+
+    it 'resolves to correct value with #fork' do
+      expect(wait_for_sucess(task)).to eq(value)
     end
   end
 
@@ -364,20 +374,18 @@ describe Lalka::Task do
         end
 
         context 'when used in traverse' do
-          def traverse(type, f, xs)
+          def traverse(type, xs)
             cons = -> (x, xs) { [x, *xs] }.curry
 
             xs.reverse.reduce(type.of([])) do |acc, value|
-              type.of(cons).ap(f.call(value)).ap(acc)
+              type.of(cons).ap(yield(value)).ap(acc)
             end
           end
 
-          let(:mapper) { -> (value) { Lalka::Task.new { |t| delay { t.resolve(value) } } } }
-          let(:task) { traverse(Lalka::Task, mapper, [1, 2, 3, 4, 5]) }
+          let(:task) { traverse(Lalka::Task, [1, 2, 3, 4, 5]) { |v| make_async_task(success: v) } }
 
-          it 'returns correct result' do
-            result = task.fork_wait
-            expect(result).to eq(M.Right([1, 2, 3, 4, 5]))
+          it_behaves_like 'it resolves to a value' do
+            let(:value) { [1, 2, 3, 4, 5] }
           end
 
           it_behaves_like 'it forks all tasks at the same time'
