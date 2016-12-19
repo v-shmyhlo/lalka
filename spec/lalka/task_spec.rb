@@ -73,6 +73,22 @@ describe Lalka::Task do
     end
   end
 
+  shared_examples 'it forks all tasks at the same time' do
+    it 'resolves within reasonable time' do
+      actual = Benchmark.measure { task.fork_wait }.real
+      expected = delay_time + delay_time * 0.1
+      expect(actual).to be < expected
+    end
+
+    it 'resolves within reasonable time' do
+      actual = Benchmark.measure { wait_for_sucess(task) }.real
+      expected = delay_time + delay_time * 0.1
+      expect(actual).to be < expected
+    end
+  end
+
+  let(:delay_time) { 0.1 }
+
   let(:handler) do
     lambda do |t|
       t.on_error do |e|
@@ -306,44 +322,40 @@ describe Lalka::Task do
           expect(result).to eq(M.Right(100))
         end
 
-        it 'forks both tasks at the same time' do
-          task1 = resolved_task(1, 1)
-          task2 = resolved_task(99, 1)
+        it_behaves_like 'it forks all tasks at the same time' do
+          let(:task) do
+            task1 = make_async_task(success: 1)
+            task2 = make_async_task(success: 99)
 
-          task3 = Lalka::Task.of(-> (x, y) { x + y }.curry).ap(task1).ap(task2)
-          real = Benchmark.measure { task3.fork_wait }.real
-
-          expect(real).to be < 1.1
+            Lalka::Task.of(-> (x, y) { x + y }.curry).ap(task1).ap(task2)
+          end
         end
 
-        it 'forks both tasks at the same time' do
-          task1 = resolved_task(1, 1)
-          task2 = resolved_task(99, 1)
+        it_behaves_like 'it forks all tasks at the same time' do
+          let(:task) do
+            task1 = make_async_task(success: 1)
+            task2 = make_async_task(success: 99)
 
-          task3 = Lalka::Task.of(-> (x, y) { x + y }.curry).ap(task2).ap(task1)
-          real = Benchmark.measure { task3.fork_wait }.real
-
-          expect(real).to be < 1.1
+            Lalka::Task.of(-> (x, y) { x + y }.curry).ap(task2).ap(task1)
+          end
         end
 
-        it 'forks both tasks at the same time' do
-          task1 = resolved_task(1, 1)
-          task2 = resolved_task(99, 1)
+        it_behaves_like 'it forks all tasks at the same time' do
+          let(:task) do
+            task1 = make_async_task(success: 1)
+            task2 = make_async_task(success: 99)
 
-          task3 = task1.map { |x| -> (y) { x + y } }.ap(task2)
-          real = Benchmark.measure { task3.fork_wait }.real
-
-          expect(real).to be < 1.1
+            task1.map { |x| -> (y) { x + y } }.ap(task2)
+          end
         end
 
-        it 'forks both tasks at the same time' do
-          task1 = resolved_task(1, 1)
-          task2 = resolved_task(99, 1)
+        it_behaves_like 'it forks all tasks at the same time' do
+          let(:task) do
+            task1 = make_async_task(success: 1)
+            task2 = make_async_task(success: 99)
 
-          task3 = task2.map { |x| -> (y) { x + y } }.ap(task1)
-          real = Benchmark.measure { task3.fork_wait }.real
-
-          expect(real).to be < 1.1
+            task2.map { |x| -> (y) { x + y } }.ap(task1)
+          end
         end
 
         context 'when used in traverse' do
@@ -355,20 +367,15 @@ describe Lalka::Task do
             end
           end
 
-          let(:mapper) { -> (value) { Lalka::Task.new { |t| delay(1) { t.resolve(value) } } } }
+          let(:mapper) { -> (value) { Lalka::Task.new { |t| delay { t.resolve(value) } } } }
           let(:task) { traverse(Lalka::Task, mapper, [1, 2, 3, 4, 5]) }
 
           it 'returns correct result' do
             result = task.fork_wait
-
             expect(result).to eq(M.Right([1, 2, 3, 4, 5]))
           end
 
-          it 'forks all tasks at the same time' do
-            real = Benchmark.measure { task.fork_wait }.real
-
-            expect(real).to be < 1.1
-          end
+          it_behaves_like 'it forks all tasks at the same time'
         end
       end
     end
