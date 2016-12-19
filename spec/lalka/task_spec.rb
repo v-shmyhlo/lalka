@@ -18,9 +18,9 @@ describe Lalka::Task do
     end
   end
 
-  def make_async_task(success: nil, error: nil, &block)
+  def make_async_task(success: nil, error: nil, delay_coef: 1, &block)
     Lalka::Task.new do |t|
-      delay do
+      delay(delay_coef) do
         if !success.nil?
           t.resolve(success)
         elsif !error.nil?
@@ -54,35 +54,37 @@ describe Lalka::Task do
     queue.pop
   end
 
-  def delay(time = 0.1, &block)
+  def delay(coef = 1, &block)
+    time = delay_time * coef
+
     Thread.new(block) do |block|
       sleep time
       block.call
     end
   end
 
-  def resolved_task(value = 'value', delay_time = 0.1)
+  def resolved_task(value = 'value', delay_coef = 1)
     Lalka::Task.new do |t|
-      delay(delay_time) { t.resolve(value) }
+      delay(delay_coef) { t.resolve(value) }
     end
   end
 
-  def rejected_task(error = 'error', delay_time = 0.1)
+  def rejected_task(error = 'error', delay_coef = 1)
     Lalka::Task.new do |t|
-      delay(delay_time) { t.reject(error) }
+      delay(delay_coef) { t.reject(error) }
     end
   end
 
   shared_examples 'it forks all tasks at the same time' do
     it 'resolves within reasonable time' do
       actual = Benchmark.measure { task.fork_wait }.real
-      expected = delay_time + delay_time * 0.1
+      expected = delay_time + delay_time * 0.2
       expect(actual).to be < expected
     end
 
     it 'resolves within reasonable time' do
       actual = Benchmark.measure { wait_for_sucess(task) }.real
-      expected = delay_time + delay_time * 0.1
+      expected = delay_time + delay_time * 0.2
       expect(actual).to be < expected
     end
   end
@@ -302,13 +304,20 @@ describe Lalka::Task do
 
       describe 'rejected.ap(rejected)' do
         it 'returns first error' do
-          task = rejected_task('first_error', 0.1).ap(rejected_task('second_error', 0.2))
+          f_task = make_async_task(error: 'first_error')
+          v_task = make_async_task(error: 'second_error', delay_coef: 2)
+
+          task = f_task.ap(v_task)
           result = task.fork_wait(&handler)
+
           expect(result).to eq(M.Left('Error: first_error'))
         end
 
         it 'returns second error' do
-          task = rejected_task('first_error', 0.2).ap(rejected_task('second_error', 0.1))
+          f_task = make_async_task(error: 'first_error', delay_coef: 2)
+          v_task = make_async_task(error: 'second_error')
+
+          task = f_task.ap(v_task)
           result = task.fork_wait(&handler)
           expect(result).to eq(M.Left('Error: second_error'))
         end
