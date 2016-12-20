@@ -1,6 +1,17 @@
 # frozen_string_literal: true
 require 'spec_helper'
 
+# TODO: missing on_success
+# TODO: missing on_error
+# TODO: on_success called with wrong args
+# TODO: on_error called with wrong args
+# TODO: resolve called with wrong args
+# TODO: reject called with wrong args
+# TODO: error raised within fork
+# TODO: error raised within new
+# TODO: error raised within on_success
+# TODO: error raised within on_error
+
 describe Lalka::Task do
   M = Dry::Monads
 
@@ -39,6 +50,7 @@ describe Lalka::Task do
 
     task.fork do |t|
       t.on_success { |v| queue.push(v) }
+      t.on_error { |e| queue.push(e) }
     end
 
     queue.pop
@@ -48,6 +60,7 @@ describe Lalka::Task do
     queue = Queue.new
 
     task.fork do |t|
+      t.on_success { |v| queue.push(v) }
       t.on_error { |e| queue.push(e) }
     end
 
@@ -175,11 +188,8 @@ describe Lalka::Task do
             end
 
             v_task = make_async_task(success: 1).bind do |x|
-              make_async_task(success: x + 1)
+              klass.new { |t| raise 'error' }
             end
-
-            # x = f_task.ap(v_task).fork_wait
-            # binding.pry
 
             f_task.ap(v_task)
           end
@@ -312,11 +322,11 @@ describe Lalka::Task do
       let(:f) { -> (x) { x + '!' } }
 
       it 'raises ArgumentError when block and function passed' do
-        expect { resolved_task.map(f, &f) }.to raise_error(ArgumentError)
+        expect { resolved_task.map(f, &f) }.to raise_error(ArgumentError, 'both block and function provided')
       end
 
       it 'raises ArgumentError when nothing passed' do
-        expect { resolved_task.map }.to raise_error(ArgumentError)
+        expect { resolved_task.map }.to raise_error(ArgumentError, 'no block or function provided')
       end
 
       context 'when block passed' do
@@ -348,11 +358,11 @@ describe Lalka::Task do
       let(:f) { -> (x) { klass.of(x + '!') } }
 
       it 'raises ArgumentError when block and function passed' do
-        expect { resolved_task.bind(f, &f) }.to raise_error(ArgumentError)
+        expect { resolved_task.bind(f, &f) }.to raise_error(ArgumentError, 'both block and function provided')
       end
 
       it 'raises ArgumentError when nothing passed' do
-        expect { resolved_task.bind }.to raise_error(ArgumentError)
+        expect { resolved_task.bind }.to raise_error(ArgumentError, 'no block or function provided')
       end
 
       describe 'resolved.bind(x -> resolved)' do

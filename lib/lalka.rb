@@ -6,7 +6,6 @@ require 'concurrent'
 module Lalka
   M = Dry::Monads
   # TODO: Invalidate resolve and reject at the same time
-  # TODO: Handle missing on_success and on_error blocks
 
   class Task
     class << self
@@ -153,10 +152,10 @@ module Lalka
 
     def function_from_arguments(*args, &block)
       if block_given?
-        raise ArgumentError if args.length != 0
+        raise ArgumentError, 'both block and function provided' if args.length != 0
         block
       else
-        raise ArgumentError if args.length != 1
+        raise ArgumentError, 'no block or function provided' if args.length != 1
         args[0]
       end
     end
@@ -182,10 +181,16 @@ module Lalka
 
   class InternalAsync < InternalBase
     def resolve(value)
-      @on_success.call(value)
+      if @on_success.nil?
+        reject(ArgumentError.new('missing on_success block'))
+      else
+        @on_success.call(value)
+      end
     end
 
     def reject(error)
+      raise ArgumentError, 'missing on_error block' if @on_error.nil?
+
       @on_error.call(error)
     end
   end
@@ -196,12 +201,22 @@ module Lalka
     end
 
     def resolve(value)
-      result = @on_success.call(value)
-      @queue.push M.Right(result)
+      if @on_success.nil?
+        reject(ArgumentError.new('missing on_success block'))
+      else
+        result = @on_success.call(value)
+        @queue.push M.Right(result)
+      end
     end
 
     def reject(error)
-      result = @on_error.call(error)
+      result =
+        if @on_error.nil?
+          ArgumentError.new('missing on_error block')
+         else
+          @on_error.call(error)
+        end
+
       @queue.push M.Left(result)
     end
   end
