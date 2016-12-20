@@ -110,21 +110,26 @@ describe Lalka::Task do
 
   shared_examples 'it rejects with an error' do
     it 'rejects with correct error with #fork_wait' do
-      expect(task.fork_wait).to eq(M.Left(error))
+      actual = task.fork_wait
+      expect(actual).to be_left
+
+      if actual.value.is_a?(StandardError)
+        expect(actual.value).to be_a(error.class)
+        expect(actual.value.message).to eq(error.message)
+      else
+        expect(actual.value).to eq(error)
+      end
     end
 
     it 'rejects with correct error with #fork' do
-      expect(wait_for_error(task)).to eq(error)
-    end
-  end
+      actual = wait_for_error(task)
 
-  shared_examples 'it raises RuntimeError when executed' do
-    it 'raises RuntimeError when #fork called' do
-      expect { task.fork {} }.to raise_error(RuntimeError, 'error')
-    end
-
-    it 'raises RuntimeError when #fork_wait called' do
-      expect { task.fork_wait {} }.to raise_error(RuntimeError, 'error')
+      if actual.is_a?(StandardError)
+        expect(actual).to be_a(error.class)
+        expect(actual.message).to eq(error.message)
+      else
+        expect(actual).to eq(error)
+      end
     end
   end
 
@@ -145,18 +150,14 @@ describe Lalka::Task do
 
   describe 'Class Methods' do
     describe '.new { |t| raise }' do
-      let(:task) { klass.new { |t| raise 'error' } }
+      let(:error) { RuntimeError.new('error') }
 
-      it 'raises RuntimeError when #fork called' do
-        expect { task.fork {} }.to raise_error(RuntimeError, 'error')
-      end
-
-      it 'raises RuntimeError when #fork_wait called' do
-        expect { task.fork_wait {} }.to raise_error(RuntimeError, 'error')
+      it_behaves_like 'it rejects with an error' do
+        let(:task) { klass.new { |t| raise 'error' } }
       end
 
       context 'when used in #ap' do
-        it_behaves_like 'it raises RuntimeError when executed' do
+        it_behaves_like 'it rejects with an error' do
           let(:task) do
             f_task = make_async_task(success: -> (x) { x + 1 })
             v_task = klass.new { |t| raise 'error' }
@@ -164,7 +165,7 @@ describe Lalka::Task do
           end
         end
 
-        it_behaves_like 'it raises RuntimeError when executed' do
+        it_behaves_like 'it rejects with an error' do
           let(:task) do
             f_task = klass.new { |t| raise 'error' }
             v_task = make_async_task(success: 99)
@@ -172,7 +173,7 @@ describe Lalka::Task do
           end
         end
 
-        it_behaves_like 'it raises RuntimeError when executed' do
+        it_behaves_like 'it rejects with an error' do
           let(:task) do
             task = klass.new { |t| raise 'error' }
             task.ap(task)
@@ -181,7 +182,7 @@ describe Lalka::Task do
       end
 
       context 'when used in spaghetti :D' do
-        it_behaves_like 'it raises RuntimeError when executed' do
+        it_behaves_like 'it rejects with an error' do
           let(:task) do
             f_task = make_async_task(success: 98).bind do |x|
               make_async_task(success: -> (y) { x + y })

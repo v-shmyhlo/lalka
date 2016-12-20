@@ -49,14 +49,14 @@ module Lalka
         Task.id(internal)
       end
 
-      @computation.call(internal)
+      internal.call(&@computation)
       queue.pop
     end
 
     def fork
       internal = InternalAsync.new
       yield internal
-      @computation.call(internal)
+      internal.call(&@computation)
       nil
     end
 
@@ -174,6 +174,12 @@ module Lalka
 
     def try
       resolve(yield)
+    rescue => e
+      reject(e)
+    end
+
+    def call
+      yield self
     rescue => e
       reject(e)
     end
