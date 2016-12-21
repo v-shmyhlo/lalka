@@ -1,22 +1,20 @@
 # frozen_string_literal: true
 require 'spec_helper'
 
-# TODO: missing on_success
-# TODO: missing on_error
 # TODO: on_success called with wrong args
 # TODO: on_error called with wrong args
 # TODO: resolve called with wrong args
 # TODO: reject called with wrong args
 # TODO: error raised within fork
-# TODO: error raised within new
 # TODO: error raised within on_success
 # TODO: error raised within on_error
 
 describe Lalka::Task do
   M = Dry::Monads
+  Task = Lalka::Task
 
   def make_sync_task(success: nil, error: nil, &block)
-    klass.new do |t|
+    Task.new do |t|
       if !success.nil?
         t.resolve(success)
       elsif !error.nil?
@@ -30,7 +28,7 @@ describe Lalka::Task do
   end
 
   def make_async_task(success: nil, error: nil, delay_coef: 1, &block)
-    klass.new do |t|
+    Task.new do |t|
       delay(delay_coef) do
         if !success.nil?
           t.resolve(success)
@@ -50,7 +48,6 @@ describe Lalka::Task do
 
     task.fork do |t|
       t.on_success { |v| queue.push(v) }
-      t.on_error { |e| queue.push(e) }
     end
 
     queue.pop
@@ -60,7 +57,6 @@ describe Lalka::Task do
     queue = Queue.new
 
     task.fork do |t|
-      t.on_success { |v| queue.push(v) }
       t.on_error { |e| queue.push(e) }
     end
 
@@ -76,12 +72,35 @@ describe Lalka::Task do
     end
   end
 
-  def resolved_task(value = 'value')
-    make_async_task(success: value)
+  def try_task(async: true, delay_coef: 1, &block)
+    if async
+      make_async_task(delay_coef: delay_coef, &block)
+    else
+      make_sync_task(&block)
+    end
   end
 
-  def rejected_task(error = 'error')
-    make_async_task(error: error)
+  def resolved_task(value = 'value', async: true, delay_coef: 1)
+    if async
+      make_async_task(success: value, delay_coef: delay_coef)
+    else
+      make_sync_task(success: value)
+    end
+  end
+
+  def rejected_task(error = 'error', async: true, delay_coef: 1)
+    if async
+      make_async_task(error: error, delay_coef: delay_coef)
+    else
+      make_sync_task(error: error)
+    end
+  end
+
+  define :match_error do |expected|
+    match do |actual|
+      expect(actual).to be_a(expected.class)
+      expect(actual.message).to eq(expected.message)
+    end
   end
 
   shared_examples 'it forks all tasks at the same time' do
@@ -114,8 +133,7 @@ describe Lalka::Task do
       expect(actual).to be_left
 
       if actual.value.is_a?(StandardError)
-        expect(actual.value).to be_a(error.class)
-        expect(actual.value.message).to eq(error.message)
+        expect(actual.value).to match_error(error)
       else
         expect(actual.value).to eq(error)
       end
@@ -125,8 +143,7 @@ describe Lalka::Task do
       actual = wait_for_error(task)
 
       if actual.is_a?(StandardError)
-        expect(actual).to be_a(error.class)
-        expect(actual.message).to eq(error.message)
+        expect(actual).to match_error(error)
       else
         expect(actual).to eq(error)
       end
@@ -134,7 +151,6 @@ describe Lalka::Task do
   end
 
   let(:delay_time) { 0.1 }
-  let(:klass) { described_class }
 
   let(:handler) do
     lambda do |t|
@@ -153,29 +169,29 @@ describe Lalka::Task do
       let(:error) { RuntimeError.new('error') }
 
       it_behaves_like 'it rejects with an error' do
-        let(:task) { klass.new { |t| raise 'error' } }
+        let(:task) { Task.new { |t| raise 'error' } }
       end
 
       context 'when used in #ap' do
         it_behaves_like 'it rejects with an error' do
           let(:task) do
-            f_task = make_async_task(success: -> (x) { x + 1 })
-            v_task = klass.new { |t| raise 'error' }
+            f_task = resolved_task(-> (x) { x + 1 })
+            v_task = Task.new { |t| raise 'error' }
             f_task.ap(v_task)
           end
         end
 
         it_behaves_like 'it rejects with an error' do
           let(:task) do
-            f_task = klass.new { |t| raise 'error' }
-            v_task = make_async_task(success: 99)
+            f_task = Task.new { |t| raise 'error' }
+            v_task = resolved_task(99)
             f_task.ap(v_task)
           end
         end
 
         it_behaves_like 'it rejects with an error' do
           let(:task) do
-            task = klass.new { |t| raise 'error' }
+            task = Task.new { |t| raise 'error' }
             task.ap(task)
           end
         end
@@ -184,12 +200,12 @@ describe Lalka::Task do
       context 'when used in spaghetti :D' do
         it_behaves_like 'it rejects with an error' do
           let(:task) do
-            f_task = make_async_task(success: 98).bind do |x|
-              make_async_task(success: -> (y) { x + y })
+            f_task = resolved_task(98).bind do |x|
+              resolved_task(-> (y) { x + y })
             end
 
-            v_task = make_async_task(success: 1).bind do |x|
-              klass.new { |t| raise 'error' }
+            v_task = resolved_task(1).bind do |x|
+              Task.new { |t| raise 'error' }
             end
 
             f_task.ap(v_task)
@@ -200,74 +216,71 @@ describe Lalka::Task do
 
     describe '.new { |t| t.try { ... } }' do
       it 'resolves when no error raised' do
-        task = make_async_task { 100 }
+        task = try_task { 100 }
         result = task.fork_wait
 
         expect(result).to eq(M.Right(100))
       end
 
       it 'rejects when error raised' do
-        task = make_async_task { raise 'error' }
+        task = try_task { raise 'error' }
         result = task.fork_wait
 
-        expect(result.value).to be_a(RuntimeError)
-        expect(result.value.message).to eq('error')
+        expect(result.value).to match_error(RuntimeError.new('error'))
       end
 
       it 'resolves when no error raised' do
-        task = make_async_task { 100 }
+        task = try_task { 100 }
         expect(wait_for_success(task)).to eq(100)
       end
 
       it 'rejects when error raised' do
-        task = make_async_task { raise 'error' }
+        task = try_task { raise 'error' }
         result = wait_for_error(task)
 
-        expect(result).to be_a(RuntimeError)
-        expect(result.message).to eq('error')
+        expect(result).to match_error(RuntimeError.new('error'))
       end
     end
 
     describe '.resolve' do
       it_behaves_like 'it resolves to a value' do
-        let(:task) { klass.resolve('value') }
+        let(:task) { Task.resolve('value') }
         let(:value) { 'value' }
       end
     end
 
     describe '.reject' do
       it_behaves_like 'it rejects with an error' do
-        let(:task) { klass.reject('error') }
+        let(:task) { Task.reject('error') }
         let(:error) { 'error' }
       end
     end
 
     describe '.try' do
       it 'resolves when no error raised' do
-        task = make_sync_task { 100 }
+        task = try_task { 100 }
         result = task.fork_wait
 
         expect(result).to eq(M.Right(100))
       end
 
       it 'rejects when error raised' do
-        task = make_sync_task { raise 'error' }
+        task = try_task { raise 'error' }
         result = task.fork_wait
 
-        expect(result.value).to be_a(RuntimeError)
-        expect(result.value.message).to eq('error')
+        expect(result.value).to match_error(RuntimeError.new('error'))
       end
 
       it 'resolves when no error raised' do
-        task = make_sync_task { 100 }
+        task = try_task { 100 }
         expect(wait_for_success(task)).to eq(100)
       end
 
       it 'rejects when error raised' do
-        task = make_sync_task { raise 'error' }
+        task = try_task { raise 'error' }
         result = wait_for_error(task)
-        expect(result).to be_a(RuntimeError)
-        expect(result.message).to eq('error')
+
+        expect(result).to match_error(RuntimeError.new('error'))
       end
     end
   end
@@ -293,6 +306,18 @@ describe Lalka::Task do
         result = wait_for_error(rejected_task)
         expect(result).to eq('error')
       end
+
+      it 'raises LocalJumpError when called without block' do
+        expect { resolved_task.fork }.to raise_error(LocalJumpError)
+      end
+
+      it 'rejects with ArgumentError when on_success block is missing' do
+        expect { resolved_task(async: false).fork { |t| t.on_error { |e| raise e } } }.to raise_error(ArgumentError, 'missing on_success block')
+      end
+
+      it 'raises ArgumentError when on_error block is missing' do
+        expect { rejected_task(async: false).fork { |t| t.on_success { |v| v } } }.to raise_error(ArgumentError, 'missing on_error block')
+      end
     end
 
     describe '#fork_wait' do
@@ -304,6 +329,20 @@ describe Lalka::Task do
       it 'when rejected returns Left' do
         result = rejected_task.fork_wait(&handler)
         expect(result).to eq(M.Left('Error: error'))
+      end
+
+      it 'rejects with ArgumentError when on_success block is missing' do
+        result = resolved_task(async: false).fork_wait { |t| t.on_error { |e| e } }
+
+        expect(result).to be_left
+        expect(result.value).to match_error(ArgumentError.new('missing on_success block'))
+      end
+
+      it 'rejects with ArgumentError when on_error block is missing' do
+        result = rejected_task(async: false).fork_wait { |t| t.on_success { |v| v } }
+
+        expect(result).to be_left
+        expect(result.value).to match_error(ArgumentError.new('missing on_error block'))
       end
 
       context 'without block' do
@@ -356,7 +395,7 @@ describe Lalka::Task do
     end
 
     describe '#bind' do
-      let(:f) { -> (x) { klass.of(x + '!') } }
+      let(:f) { -> (x) { Task.of(x + '!') } }
 
       it 'raises ArgumentError when block and function passed' do
         expect { resolved_task.bind(f, &f) }.to raise_error(ArgumentError, 'both block and function provided')
@@ -420,8 +459,8 @@ describe Lalka::Task do
       describe 'rejected.ap(rejected)' do
         it_behaves_like 'it rejects with an error' do
           let(:task) do
-            f_task = make_async_task(error: 'first_error')
-            v_task = make_async_task(error: 'second_error', delay_coef: 2)
+            f_task = rejected_task('first_error')
+            v_task = rejected_task('second_error', delay_coef: 2)
 
             f_task.ap(v_task)
           end
@@ -431,8 +470,8 @@ describe Lalka::Task do
 
         it_behaves_like 'it rejects with an error' do
           let(:task) do
-            f_task = make_async_task(error: 'first_error', delay_coef: 2)
-            v_task = make_async_task(error: 'second_error')
+            f_task = rejected_task('first_error', delay_coef: 2)
+            v_task = rejected_task('second_error')
 
             f_task.ap(v_task)
           end
@@ -444,10 +483,10 @@ describe Lalka::Task do
       describe 'pure(f).ap(resolved).ap(resolved)' do
         it_behaves_like 'it resolves to a value' do
           let(:task) do
-            task1 = make_sync_task(success: 99)
-            task2 = make_sync_task(success: 1)
+            task1 = resolved_task(99)
+            task2 = resolved_task(1)
 
-            klass.of(-> (x, y) { x + y }.curry).ap(task1).ap(task2)
+            Task.of(-> (x, y) { x + y }.curry).ap(task1).ap(task2)
           end
 
           let(:value) { 100 }
@@ -456,26 +495,26 @@ describe Lalka::Task do
 
       it_behaves_like 'it forks all tasks at the same time' do
         let(:task) do
-          task1 = make_async_task(success: 1)
-          task2 = make_async_task(success: 99)
+          task1 = resolved_task(1)
+          task2 = resolved_task(99)
 
-          klass.of(-> (x, y) { x + y }.curry).ap(task1).ap(task2)
+          Task.of(-> (x, y) { x + y }.curry).ap(task1).ap(task2)
         end
       end
 
       it_behaves_like 'it forks all tasks at the same time' do
         let(:task) do
-          task1 = make_async_task(success: 1)
-          task2 = make_async_task(success: 99)
+          task1 = resolved_task(1)
+          task2 = resolved_task(99)
 
-          klass.of(-> (x, y) { x + y }.curry).ap(task2).ap(task1)
+          Task.of(-> (x, y) { x + y }.curry).ap(task2).ap(task1)
         end
       end
 
       it_behaves_like 'it forks all tasks at the same time' do
         let(:task) do
-          task1 = make_async_task(success: 1)
-          task2 = make_async_task(success: 99)
+          task1 = resolved_task(1)
+          task2 = resolved_task(99)
 
           task1.map { |x| -> (y) { x + y } }.ap(task2)
         end
@@ -483,8 +522,8 @@ describe Lalka::Task do
 
       it_behaves_like 'it forks all tasks at the same time' do
         let(:task) do
-          task1 = make_async_task(success: 1)
-          task2 = make_async_task(success: 99)
+          task1 = resolved_task(1)
+          task2 = resolved_task(99)
 
           task2.map { |x| -> (y) { x + y } }.ap(task1)
         end
@@ -499,7 +538,7 @@ describe Lalka::Task do
           end
         end
 
-        let(:task) { traverse(klass, [1, 2, 3, 4, 5]) { |v| make_async_task(success: v) } }
+        let(:task) { traverse(Task, [1, 2, 3, 4, 5]) { |v| resolved_task(v) } }
 
         it_behaves_like 'it resolves to a value' do
           let(:value) { [1, 2, 3, 4, 5] }

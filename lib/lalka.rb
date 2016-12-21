@@ -27,11 +27,6 @@ module Lalka
         end
       end
 
-      def id(internal)
-        internal.on_success { |v| v }
-        internal.on_error { |e| e }
-      end
-
       alias of resolve
     end
 
@@ -46,7 +41,8 @@ module Lalka
       if block_given?
         yield internal
       else
-        Task.id(internal)
+        internal.on_success { |v| v }
+        internal.on_error { |e| e }
       end
 
       internal.call(&@computation)
