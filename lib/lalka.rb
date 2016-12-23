@@ -1,7 +1,7 @@
 # frozen_string_literal: true
-require 'lalka/version'
 require 'dry-monads'
-require 'concurrent'
+
+require 'lalka/version'
 
 module Lalka
   M = Dry::Monads
@@ -100,41 +100,56 @@ module Lalka
 
     def ap(other_task)
       Task.new do |t|
-        atom = Concurrent::Atom.new(M.Right(fn: M.None(), arg: M.None()))
+        mutex = Mutex.new
+        completed = false
+        either = M.Right([M.None(), M.None()])
 
-        atom.add_observer do |_, _, either|
-          if either.right?
-            value = either.value
+        complete_task = lambda do |&block|
+          mutex.synchronize do
+            return if completed
 
-            value[:fn].bind { |fn| value[:arg].fmap(fn) }.fmap do |result|
-              t.resolve(result)
-              atom.delete_observers
+            either = block.call(either)
+
+            if either.right?
+              (e_fn, e_arg) = either.value
+
+              e_fn.bind { |fn| e_arg.fmap(fn) }.fmap do |value|
+                t.resolve(value)
+                completed = true
+              end
+            else
+              error = either.value
+              t.reject(error)
+              completed = true
             end
-          else
-            error = either.value
-
-            t.reject(error)
-            atom.delete_observers
           end
         end
 
         fork do |this|
           this.on_success do |fn|
-            atom.swap(fn) { |either, fn| either.bind { |struct| M.Right(struct.merge(fn: M.Some(fn))) } }
+            complete_task.call do |either|
+              either.bind { |_, e_arg| M.Right([M.Some(fn), e_arg]) }
+            end
           end
 
           this.on_error do |error|
-            atom.swap(error) { |either, error| either.bind { M.Left(error) } }
+            complete_task.call do |either|
+              either.bind { M.Left(error) }
+            end
           end
         end
 
         other_task.fork do |other|
           other.on_success do |arg|
-            atom.swap(arg) { |either, arg| either.bind { |struct| M.Right(struct.merge(arg: M.Some(arg))) } }
+            complete_task.call do |either|
+              either.bind { |e_fn, _| M.Right([e_fn, M.Some(arg)]) }
+            end
           end
 
           other.on_error do |error|
-            atom.swap(error) { |either, error| either.bind { M.Left(error) } }
+            complete_task.call do |either|
+              either.bind { M.Left(error) }
+            end
           end
         end
       end
@@ -215,7 +230,7 @@ module Lalka
       result =
         if @on_error.nil?
           ArgumentError.new('missing on_error block')
-         else
+        else
           @on_error.call(error)
         end
 
