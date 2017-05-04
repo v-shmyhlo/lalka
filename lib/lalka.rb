@@ -158,7 +158,7 @@ module Lalka
 
     def function_from_arguments(*args, &block)
       if block_given?
-        raise ArgumentError, 'both block and function provided' if args.length != 0
+        raise ArgumentError, 'both block and function provided' unless args.empty?
         block
       else
         raise ArgumentError, 'no block or function provided' if args.length != 1
