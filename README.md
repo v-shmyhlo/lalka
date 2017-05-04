@@ -43,17 +43,9 @@ Lalka is a ruby implementation of a Task monad (aka Continuation monad) - useful
 ### fork_wait:
 ```ruby
   # executes computation, fork_wait blocks and returns Either from "dry-monads" gem
-  task = Lalka::Task.resolve(99)
+  task = Lalka::Task.resolve(100)
 
-  result = task.fork_wait do |t|
-    t.on_success do |value|
-      value + 1
-    end
-
-    t.on_error do |error|
-      # ...
-    end
-  end
+  result = task.fork_wait
 
   result # Right(100)
 ```
@@ -61,17 +53,9 @@ Lalka is a ruby implementation of a Task monad (aka Continuation monad) - useful
 ```ruby
   task = Lalka::Task.reject('error')
 
-  result = task.fork_wait do |t|
-    t.on_success do |value|
-      # ...
-    end
+  result = task.fork_wait
 
-    t.on_error do |error|
-      "Error: " + error
-    end
-  end
-
-  result # Left("Error: error")
+  result # Left("error")
 ```
 
 ### map:
@@ -139,7 +123,7 @@ Or install it yourself as:
 
 After checking out the repo, run `bin/setup` to install dependencies. Then, run `rake spec` to run the tests. You can also run `bin/console` for an interactive prompt that will allow you to experiment.
 
-To install this gem onto your local machine, run `bundle exec rake install`. 
+To install this gem onto your local machine, run `bundle exec rake install`.
 
 ## Contributing
 

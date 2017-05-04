@@ -322,27 +322,13 @@ describe Lalka::Task do
 
     describe '#fork_wait' do
       it 'when resolved returns Right' do
-        result = resolved_task.fork_wait(&handler)
-        expect(result).to eq(M.Right('Success: value'))
+        result = resolved_task.fork_wait
+        expect(result).to eq(M.Right('value'))
       end
 
       it 'when rejected returns Left' do
-        result = rejected_task.fork_wait(&handler)
-        expect(result).to eq(M.Left('Error: error'))
-      end
-
-      it 'rejects with ArgumentError when on_success block is missing' do
-        result = resolved_task(async: false).fork_wait { |t| t.on_error { |e| e } }
-
-        expect(result).to be_left
-        expect(result.value).to match_error(ArgumentError.new('missing on_success block'))
-      end
-
-      it 'rejects with ArgumentError when on_error block is missing' do
-        result = rejected_task(async: false).fork_wait { |t| t.on_success { |v| v } }
-
-        expect(result).to be_left
-        expect(result.value).to match_error(ArgumentError.new('missing on_error block'))
+        result = rejected_task.fork_wait
+        expect(result).to eq(M.Left('error'))
       end
 
       context 'without block' do

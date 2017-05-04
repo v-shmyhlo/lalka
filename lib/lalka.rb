@@ -1,6 +1,5 @@
 # frozen_string_literal: true
 require 'dry-monads'
-
 require 'lalka/version'
 
 module Lalka
@@ -38,12 +37,8 @@ module Lalka
       queue = Queue.new
       internal = Internal.new(queue)
 
-      if block_given?
-        yield internal
-      else
-        internal.on_success { |v| v }
-        internal.on_error { |e| e }
-      end
+      internal.on_success { |v| v }
+      internal.on_error { |e| e }
 
       internal.call(&@computation)
       queue.pop
